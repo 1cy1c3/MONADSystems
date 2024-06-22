@@ -4,6 +4,8 @@ import json
 import random
 from io import BytesIO
 from PIL import Image, ImageEnhance
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # MONAD Colours from: https://monad-xyz.notion.site/skilly/Monad-Media-Kit-0554df533a10449d8dbbf960fd0c52a7
 list_of_colors = [(181, 168, 250), (204, 196, 252), (95, 237, 223), (28, 94, 87), (32, 0, 82), (13, 0, 33), (74, 0, 43),
@@ -170,7 +172,7 @@ def main(number: int):
         (next_center - (next_size * 1.5) / 2 < last_center - (last_size * 1.5) / 2 - distance_between_planets)):
             # Check for room of moon
             distance_moon = random.randint(distance_moon_min, distance_moon_max)
-            if (next_center - border_size * 2 > distance_moon and moon_chance > 3
+            if (next_center - border_size * 2 > distance_moon and moon_chance > 1
                     and distance_between_planets >= (distance_moon_max + distance_moon)
                     and distance_between_planets_old >= (distance_moon_max + distance_moon)):
                 moon_size = random.randint(moon_size_min, moon_size_max)
@@ -307,11 +309,11 @@ def main(number: int):
                 moon = planet['moon']
                 # same logic for moon, but use transformed values
                 x_moon = int(x + (moon[0]['orbit']) * math.sin((planet['pos_orb'] +
-                                                                    d * 2 * moon[0]['speed'] / 10) * (
-                                                                           math.pi / 180)))
+                                                                d * 2 * moon[0]['speed'] / 10) * (
+                                                                       math.pi / 180)))
                 y_moon = int(y + (moon[0]['orbit']) * math.cos((planet['pos_orb'] +
-                                                                    d * 2 * moon[0]['speed'] / 10) * (
-                                                                           math.pi / 180)))
+                                                                d * 2 * moon[0]['speed'] / 10) * (
+                                                                       math.pi / 180)))
 
                 draw_circle_fill(cr, x_moon, y_moon, moon[0]['size'], planet['r'], planet['g'], planet['b'])
 
@@ -375,10 +377,16 @@ def main(number: int):
         file.write("\n")
 
 
+async def run_main(number: int):
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        await loop.run_in_executor(pool, main, number)
+
+
+async def main_async(n):
+    tasks = [run_main(i) for i in range(1, n + 1)]
+    await asyncio.gather(*tasks)
+
+
 if __name__ == "__main__":
-    i = 0
-    n = input("Iteratinos: ")
-    while i < int(n):
-        i += 1
-        print(f"{i} / {n}")
-        main(i)
+    asyncio.run(main_async(int(input('Iterations: '))))
