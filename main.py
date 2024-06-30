@@ -169,14 +169,15 @@ def main(number: int):
         moon_chance = random.randint(moon_chance_min, moon_chance_max)
         # Check for room of orbit and planet
         if (not (next_center - (next_size * 1.5) / 2 < border_size) or not
-        (next_center - (next_size * 1.5) / 2 < last_center - (last_size * 1.5) / 2 - distance_between_planets)):
+            (next_center - (next_size * 1.5) / 2 < last_center - (last_size * 1.5) / 2 - distance_between_planets)):
             # Check for room of moon
             distance_moon = random.randint(distance_moon_min, distance_moon_max)
-            if (next_center - border_size * 2 > distance_moon and moon_chance > 1
+            if (next_center - border_size * 2 > distance_moon and moon_chance > 3
                     and distance_between_planets >= (distance_moon_max + distance_moon)
                     and distance_between_planets_old >= (distance_moon_max + distance_moon)):
                 moon_size = random.randint(moon_size_min, moon_size_max)
                 moon_speed = random.randint(moon_speed_min, moon_speed_max)
+                print("moon")
                 # Avoid speed 0
                 while moon_speed == 0:
                     moon_speed = random.randint(moon_speed_min, moon_speed_max)
@@ -202,7 +203,7 @@ def main(number: int):
                 planet_details.append(planet_detail)
 
             # Rings
-            elif ring_chance > 7:
+            if ring_chance > 7:
                 ring_details = []
                 ring_amount = random.randint(ring_amount_min, ring_amount_max)
                 trigger = False
