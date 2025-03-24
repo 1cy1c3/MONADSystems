@@ -5,6 +5,7 @@ import random
 from io import BytesIO
 from PIL import Image, ImageEnhance
 import asyncio
+import opensimplex
 from concurrent.futures import ThreadPoolExecutor
 
 # MONAD Colours from: https://monad-xyz.notion.site/skilly/Monad-Media-Kit-0554df533a10449d8dbbf960fd0c52a7
@@ -16,6 +17,16 @@ main_r, main_g, main_b = .514, .431, .976
 
 # float generator
 float_gen = lambda a, b: random.uniform(a, b)
+
+
+def generate_noise_params():
+    return {
+        'seed': random.randint(0, 10000),
+        'scale': random.uniform(.02, .1),
+        'threshold_light': random.uniform(.1, .4),
+        'threshold_dark': random.uniform(-.4, -.1),
+        'octaves': random.randint(1, 3)
+    }
 
 
 def add_watermark(image, watermark_path, position, x, y):
@@ -58,6 +69,48 @@ def draw_circle_fill(cr, x, y, radius, r, g, b):
     cr.set_source_rgb(r, g, b)
     cr.arc(x, y, radius, 0, 2 * math.pi)
     cr.fill()
+
+
+def draw_planet(cr, x, y, radius, r, g, b, noise_params=None):
+    # Base planet with gradient
+    pattern = cairo.RadialGradient(x, y, radius * 0.7, x, y, radius)
+    pattern.add_color_stop_rgb(0, r * 1.2, g * 1.2, b * 1.2)
+    pattern.add_color_stop_rgb(1, r * 0.8, g * 0.8, b * 0.8)
+    cr.set_source(pattern)
+    cr.arc(x, y, radius, 0, 2 * math.pi)
+    cr.fill()
+
+    if noise_params is not None:
+        # Generate noise based on stored parameters
+        noise = opensimplex.OpenSimplex(seed=noise_params['seed'])
+
+        # Apply noise texture
+        for dy in range(-radius, radius, 2):
+            for dx in range(-radius, radius, 2):
+                dist = math.sqrt(dx ** 2 + dy ** 2)
+                if dist <= radius:
+                    nx, ny = x + dx, y + dy
+                    # Multi-octave noise for more complexity
+                    n = 0
+                    for octave in range(noise_params['octaves']):
+                        freq = 2 ** octave
+                        n += noise.noise2(nx * noise_params['scale'] * freq,
+                                          ny * noise_params['scale'] * freq) / freq
+
+                    if n > noise_params['threshold_light']:
+                        cr.set_source_rgba(1, 1, 1, noise_params['threshold_light'])
+                        cr.arc(nx, ny, 1.5, 0, 2 * math.pi)
+                        cr.fill()
+                    elif n < noise_params['threshold_dark']:
+                        cr.set_source_rgba(0, 0, 0, -(noise_params['threshold_dark']))
+                        cr.arc(nx, ny, 1.5, 0, 2 * math.pi)
+                        cr.fill()
+
+    # Outline
+    cr.set_source_rgb(0, 0, 0)
+    cr.set_line_width(1)
+    cr.arc(x, y, radius, 0, 2 * math.pi)
+    cr.stroke()
 
 
 def draw_border(cr, size, r, g, b, width, height):
@@ -143,8 +196,8 @@ def main(number: int):
     for pos in star_pos:
         draw_circle_fill(cr, pos[0], pos[1], 1, .973, .929, .906)
 
-    draw_circle_fill(cr, width / 2, sun_center, sun_size, sun_r, sun_g, sun_b)
-
+    draw_planet(cr, width / 2, sun_center, sun_size, sun_r, sun_g, sun_b)
+    planet_detail = None
     print("Calculating Planets")
     for x in range(1, 10):
         speed = 0
@@ -169,7 +222,7 @@ def main(number: int):
         moon_chance = random.randint(moon_chance_min, moon_chance_max)
         # Check for room of orbit and planet
         if (not (next_center - (next_size * 1.5) / 2 < border_size) or not
-            (next_center - (next_size * 1.5) / 2 < last_center - (last_size * 1.5) / 2 - distance_between_planets)):
+        (next_center - (next_size * 1.5) / 2 < last_center - (last_size * 1.5) / 2 - distance_between_planets)):
             # Check for room of moon
             distance_moon = random.randint(distance_moon_min, distance_moon_max)
             if (next_center - border_size * 2 > distance_moon and moon_chance > 3
@@ -197,7 +250,8 @@ def main(number: int):
                     'r': r,
                     'g': g,
                     'b': b,
-                    'moon': moon_details
+                    'moon': moon_details,
+                    'noise': generate_noise_params()
                 }
 
                 planet_details.append(planet_detail)
@@ -207,6 +261,9 @@ def main(number: int):
                 ring_details = []
                 ring_amount = random.randint(ring_amount_min, ring_amount_max)
                 trigger = False
+
+                if planet_detail is not None and 'moon' in planet_detail:
+                    ring_amount_max = 2
 
                 for ring in range(ring_amount):
                     ring_radius = random.randint(ring_radius_min, ring_radius_max)
@@ -235,7 +292,8 @@ def main(number: int):
                         'r': r,
                         'g': g,
                         'b': b,
-                        'rings': ring_details
+                        'rings': ring_details,
+                        'noise': generate_noise_params()
                     }
 
                 else:
@@ -246,7 +304,8 @@ def main(number: int):
                         'center': next_center,
                         'r': r,
                         'g': g,
-                        'b': b
+                        'b': b,
+                        'noise': generate_noise_params()
                     }
 
                 planet_details.append(planet_detail)
@@ -259,7 +318,8 @@ def main(number: int):
                     'center': next_center,
                     'r': r,
                     'g': g,
-                    'b': b
+                    'b': b,
+                    'noise': generate_noise_params()
                 }
 
                 planet_details.append(planet_detail)
@@ -293,7 +353,11 @@ def main(number: int):
 
             # draw bigger outer circle to make the orbit lin not connect with planet, optical hack
             draw_circle_fill(cr, x, y, planet['size'] * 1.5, main_r, main_g, main_b)
-            draw_circle_fill(cr, x, y, planet['size'], planet['r'], planet['g'], planet['b'])
+
+            if 'noise' in planet:
+                draw_planet(cr, x, y, planet['size'], planet['r'], planet['g'], planet['b'], planet['noise'])
+            else:
+                draw_planet(cr, x, y, planet['size'], planet['r'], planet['g'], planet['b'])
 
             if x - width / 2 < 0:
                 draw_shadow(cr, x, y, planet['size'], math.atan((y - height / 2) / (x - width / 2)) + .5 * math.pi)
@@ -301,11 +365,10 @@ def main(number: int):
                 draw_shadow(cr, x, y, planet['size'], math.atan((y - height / 2) / (x - width / 2)) - .5 * math.pi)
             else:
                 if y - height / 2 > 0:
-                    draw_shadow(cr, x, y, planet['size'],
-                                .5 * math.pi - .5 * math.pi)
+                    draw_shadow(cr, x, y, planet['size'], .5 * math.pi - .5 * math.pi)
                 elif y - height / 2 < 0:
-                    draw_shadow(cr, x, y, planet['size'],
-                                .5 * math.pi + .5 * math.pi)
+                    draw_shadow(cr, x, y, planet['size'], .5 * math.pi + .5 * math.pi)
+
             if 'moon' in planet:
                 moon = planet['moon']
                 # same logic for moon, but use transformed values
@@ -316,7 +379,7 @@ def main(number: int):
                                                                 d * 2 * moon[0]['speed'] / 10) * (
                                                                        math.pi / 180)))
 
-                draw_circle_fill(cr, x_moon, y_moon, moon[0]['size'], planet['r'], planet['g'], planet['b'])
+                draw_planet(cr, x_moon, y_moon, moon[0]['size'], planet['r'], planet['g'], planet['b'])
 
                 if x_moon - width / 2 < 0:
                     draw_shadow(cr, x_moon, y_moon, moon[0]['size'],
@@ -354,7 +417,7 @@ def main(number: int):
             for pos in star_pos:
                 draw_circle_fill(cr, pos[0], pos[1], 1, .973, .929, .906)
 
-            draw_circle_fill(cr, width / 2, sun_center, sun_size, sun_r, sun_g, sun_b)
+            draw_planet(cr, width / 2, sun_center, sun_size, sun_r, sun_g, sun_b)
 
         # Add watermark
     # watermark_path = 'assets/media/watermark.png'

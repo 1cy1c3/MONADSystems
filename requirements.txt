@@ -1,2 +1,3 @@
 pycairo
 pillow
+opensimplex
