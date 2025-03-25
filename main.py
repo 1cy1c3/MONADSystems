@@ -3,19 +3,18 @@ import math
 import json
 import random
 from io import BytesIO
-from PIL import Image, ImageEnhance
-import asyncio
+from PIL import Image
 import opensimplex
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 
 # MONAD Colours from: https://monad-xyz.notion.site/skilly/Monad-Media-Kit-0554df533a10449d8dbbf960fd0c52a7
 list_of_colors = [(181, 168, 250), (204, 196, 252), (95, 237, 223), (28, 94, 87), (32, 0, 82), (13, 0, 33), (74, 0, 43),
                   (96, 0, 78), (38, 0, 31), (158, 245, 237), (199, 105, 158), (204, 196, 252),
                   (128, 51, 112), (248, 237, 231), (191, 247, 242), (217, 156, 191)]
-
+sun_colors = list_of_colors
+sun_colors.append((0, 0, 0))
 main_r, main_g, main_b = .514, .431, .976
-
-# float generator
+frames = 360
 float_gen = lambda a, b: random.uniform(a, b)
 
 
@@ -27,27 +26,6 @@ def generate_noise_params():
         'threshold_dark': random.uniform(-.4, -.1),
         'octaves': random.randint(1, 3)
     }
-
-
-def add_watermark(image, watermark_path, position, x, y):
-    # Open the watermark
-    watermark = Image.open(watermark_path)
-
-    # Ensure the watermark has an alpha channel
-    if watermark.mode != 'RGBA':
-        watermark = watermark.convert('RGBA')
-    # Resize the watermark
-    watermark = watermark.resize((x, y))
-    alpha = watermark.split()[3]
-    alpha = ImageEnhance.Brightness(alpha).enhance(0.6)
-    watermark.putalpha(alpha)
-
-    # Paste the watermark onto the image at the specified position
-    image.paste(watermark, position, watermark)
-
-    # Paste the watermark onto the image at the specified position
-    image.paste(watermark, position, watermark)  # Assuming the watermark has transparency
-    return image
 
 
 def draw_ellipse(cr, x, y, width, height, r, g, b):
@@ -134,7 +112,7 @@ def draw_shadow(cr, x, y, radius, angle):
     cr.fill()
 
 
-def main(number: int):
+def main():
     # Canvas
     width, height = 1000, 1000
     border_size = 10
@@ -143,7 +121,7 @@ def main(number: int):
     sun_size_min, sun_size_max = 25, 40
     sun_size = random.randint(sun_size_min, sun_size_max)
     sun_center = (height / 2)
-    sun_color = random.choice(list_of_colors)
+    sun_color = random.choice(sun_colors)
     sun_r, sun_g, sun_b = sun_color[0] / 255.0, sun_color[1] / 255.0, sun_color[2] / 255.0
 
     # Stars
@@ -231,6 +209,7 @@ def main(number: int):
                 moon_size = random.randint(moon_size_min, moon_size_max)
                 moon_speed = random.randint(moon_speed_min, moon_speed_max)
                 print("moon")
+                moon = True
                 # Avoid speed 0
                 while moon_speed == 0:
                     moon_speed = random.randint(moon_speed_min, moon_speed_max)
@@ -251,10 +230,12 @@ def main(number: int):
                     'g': g,
                     'b': b,
                     'moon': moon_details,
-                    'noise': generate_noise_params()
+                    'noise': generate_noise_params() if random.randint(0, 3) > 0 else None
                 }
 
                 planet_details.append(planet_detail)
+            else:
+                moon = False
 
             # Rings
             if ring_chance > 7:
@@ -262,13 +243,10 @@ def main(number: int):
                 ring_amount = random.randint(ring_amount_min, ring_amount_max)
                 trigger = False
 
-                if planet_detail is not None and 'moon' in planet_detail:
-                    ring_amount_max = 2
-
                 for ring in range(ring_amount):
                     ring_radius = random.randint(ring_radius_min, ring_radius_max)
                     ring_width = random.randint(ring_width_min, ring_width_max)
-                    if next_size > 11:
+                    if next_size > 10 and not moon:
                         ring_radius += 5
 
                     if next_center - border_size * 2 > ring_radius + ring_width:
@@ -293,7 +271,7 @@ def main(number: int):
                         'g': g,
                         'b': b,
                         'rings': ring_details,
-                        'noise': generate_noise_params()
+                        'noise': generate_noise_params() if random.randint(0, 3) > 0 else None
                     }
 
                 else:
@@ -305,7 +283,7 @@ def main(number: int):
                         'r': r,
                         'g': g,
                         'b': b,
-                        'noise': generate_noise_params()
+                        'noise': generate_noise_params() if random.randint(0, 3) > 0 else None
                     }
 
                 planet_details.append(planet_detail)
@@ -319,7 +297,7 @@ def main(number: int):
                     'r': r,
                     'g': g,
                     'b': b,
-                    'noise': generate_noise_params()
+                    'noise': generate_noise_params() if random.randint(0, 3) > 0 else None
                 }
 
                 planet_details.append(planet_detail)
@@ -334,8 +312,20 @@ def main(number: int):
     collected_frames = []
     # For 360 degrees revolution draw planets and moon
     print("Calculating Rotation")
+    black_hole = False
+    if (sun_r, sun_g, sun_b) == (0, 0, 0):
+        print("blackhole")
+        black_hole = True
+
     for d in range(0, 360):
         for i, planet in enumerate(planet_details):
+            if black_hole:
+                planet['center'] += 2
+                planet['speed'] = planet['speed'] + .2 if planet['speed'] > 0 else planet['speed'] - .2
+                if planet['center'] >= sun_center - sun_size * 1.5:
+                    sun_size += 5
+                    del planet_details[i]
+
             if i == 0:
                 draw_orbit(cr, 1, width / 2, sun_center, (height / 2) - planet['center']
                            - border_size, sun_r, sun_g, sun_b)
@@ -354,7 +344,7 @@ def main(number: int):
             # draw bigger outer circle to make the orbit lin not connect with planet, optical hack
             draw_circle_fill(cr, x, y, planet['size'] * 1.5, main_r, main_g, main_b)
 
-            if 'noise' in planet:
+            if 'noise' in planet and planet['noise'] is not None:
                 draw_planet(cr, x, y, planet['size'], planet['r'], planet['g'], planet['b'], planet['noise'])
             else:
                 draw_planet(cr, x, y, planet['size'], planet['r'], planet['g'], planet['b'])
@@ -394,7 +384,7 @@ def main(number: int):
                     elif y_moon - height / 2 < 0:
                         draw_shadow(cr, x_moon, y_moon, moon[0]['size'],
                                     .5 * math.pi + .5 * math.pi)
-            elif 'rings' in planet:
+            if 'rings' in planet:
                 for item in planet['rings']:
                     x_ring = int((width / 2) + ((height / 2) - planet['center'] - border_size)
                                  * math.sin((planet['pos_orb'] + d * planet['speed'] / 10) * (math.pi / 180)))
@@ -419,20 +409,7 @@ def main(number: int):
 
             draw_planet(cr, width / 2, sun_center, sun_size, sun_r, sun_g, sun_b)
 
-        # Add watermark
-    # watermark_path = 'assets/media/watermark.png'
-    # watermark_position = (width - 256 - 20, 20)  # 10 pixels padding from right and top
-    # x, y = 256, 50
-    # print("Add Watermark")
-    # for pil_image in collected_frames:
-    #    # Save the image to a BytesIO object
-    #    image_io = BytesIO()
-    #
-    #       pil_image.load()
-    #      pil_image = add_watermark(pil_image, watermark_path, watermark_position, x, y)
-    #     pil_image.save(image_io, format='PNG')
-
-    collected_frames[0].save(f'nft/gifs/System_{number}.gif', format='GIF', save_all=True,
+    collected_frames[0].save(f'nft/gifs/{random.randint(1, 10000)}.gif', format='GIF', save_all=True,
                              append_images=collected_frames,
                              optimize=False, duration=33, loop=0)
 
@@ -441,16 +418,15 @@ def main(number: int):
         file.write("\n")
 
 
-async def run_main(number: int):
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, main, number)
-
-
-async def main_async(n):
-    tasks = [run_main(i) for i in range(1, n + 1)]
-    await asyncio.gather(*tasks)
+def run_batch(iterations):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(main) for _ in range(iterations)]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main_async(int(input('Iterations: '))))
+    run_batch(int(input('Iterations: ')))
